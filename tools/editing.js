@@ -34,17 +34,19 @@ module.exports = (server) => {
         const pad = await padManager.getPad(padId);
         const authorId = await getAiAuthor(authorName);
         const currentText = pad.text();
+        const attribs = [['author', authorId]];
+        const pool = pad.pool;
         try {
           let changeset;
           if (action === 'append') {
             changeset =
-                Changeset.makeSplice(currentText, currentText.length - 1, 0, text);
+                Changeset.makeSplice(currentText, currentText.length - 1, 0, text, attribs, pool);
           } else if (action === 'insert') {
             const pos = position ?? 0;
             if (pos < 0 || pos > currentText.length - 1) {
               return {content: [{type: 'text', text: `Invalid position: ${pos}`}]};
             }
-            changeset = Changeset.makeSplice(currentText, pos, 0, text);
+            changeset = Changeset.makeSplice(currentText, pos, 0, text, attribs, pool);
           } else if (action === 'replace') {
             if (!findText) {
               return {
@@ -57,7 +59,7 @@ module.exports = (server) => {
                 text: `Text not found: "${findText.substring(0, 100)}"`}]};
             }
             changeset =
-                Changeset.makeSplice(currentText, idx, findText.length, text);
+                Changeset.makeSplice(currentText, idx, findText.length, text, attribs, pool);
           }
           await pad.appendRevision(changeset, authorId);
           await padMessageHandler.updatePadClients(pad);
