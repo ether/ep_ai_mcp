@@ -1,0 +1,10 @@
+{
+  "parts": [
+    {
+      "name": "ep_ai_mcp",
+      "hooks": {
+        "expressCreateServer": "ep_ai_mcp/index"
+      }
+    }
+  ]
+}
