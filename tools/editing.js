@@ -3,6 +3,7 @@ const {z} = require('zod');
 const padManager = require('ep_etherpad-lite/node/db/PadManager');
 const authorManager = require('ep_etherpad-lite/node/db/AuthorManager');
 const Changeset = require('ep_etherpad-lite/static/js/Changeset');
+const padMessageHandler = require('ep_etherpad-lite/node/handler/PadMessageHandler');
 const epAiCore = require('ep_ai_core/index');
 const log4js = require('ep_etherpad-lite/node_modules/log4js');
 const logger = log4js.getLogger('ep_ai_mcp:editing');
@@ -59,6 +60,7 @@ module.exports = (server) => {
                 Changeset.makeSplice(currentText, idx, findText.length, text);
           }
           await pad.appendRevision(changeset, authorId);
+          await padMessageHandler.updatePadClients(pad);
           return {
             content: [{type: 'text', text: `Edit applied: ${action} (${text.length} chars)`}],
           };
