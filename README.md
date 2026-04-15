@@ -112,6 +112,31 @@ claude mcp add etherpad --transport http http://localhost:9001/mcp \
   -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
+### OpenClaw
+
+Add Etherpad as an MCP server in your OpenClaw config (`config.yaml`):
+
+```yaml
+mcp_servers:
+  etherpad:
+    url: http://localhost:9001/mcp
+    transport: streamable-http
+    headers:
+      Authorization: "Bearer YOUR_API_KEY"
+```
+
+Once connected, OpenClaw can interact with Etherpad from any of its
+supported channels (WhatsApp, Telegram, Slack, Discord, etc.). Ask it
+to read pads, check who wrote what, edit documents, or send chat
+messages — all 14 MCP tools are available.
+
+Example from Telegram:
+```
+> Read the pad "meeting-notes" and summarize it
+> Who wrote the introduction in pad "report-q1"?
+> Add a conclusion to pad "draft-proposal"
+```
+
 ## License
 
 Apache-2.0
