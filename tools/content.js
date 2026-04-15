@@ -56,7 +56,10 @@ module.exports = (server) => {
         const padIds = await padManager.listAllPads();
         const settings = epAiCore.getSettings();
         const results = [];
+        const MAX_SCAN = 500; // Limit how many pads we scan to prevent DoS
+        let scanned = 0;
         for (const padId of padIds.padIDs) {
+          if (++scanned > MAX_SCAN) break;
           if (!epAiCore.accessControl.canRead(padId, settings)) continue;
           try {
             const pad = await padManager.getPad(padId);

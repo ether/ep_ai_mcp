@@ -81,6 +81,10 @@ module.exports = (server) => {
       async ({padId, text}) => {
         const id = padId ||
             `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        // Access control: check if AI can write to this pad ID
+        if (!epAiCore.accessControl.canWrite(id, epAiCore.getSettings())) {
+          return {content: [{type: 'text', text: `Access denied: cannot create pad ${id}`}]};
+        }
         const exists = await padManager.doesPadExist(id);
         if (exists) {
           return {content: [{type: 'text', text: `Pad already exists: ${id}`}]};

@@ -12,6 +12,10 @@ const registerEditingTools = require('./tools/editing');
 const registerChatTools = require('./tools/chat');
 const registerMetaTools = require('./tools/meta');
 
+// Session limits to prevent DoS
+const MAX_SESSIONS = 100;
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 const createMcpServer = () => {
   const server = new McpServer({name: 'etherpad', version: '0.0.1'});
   registerAuthorshipTools(server);
@@ -25,6 +29,23 @@ const createMcpServer = () => {
 
 const createMcpHandler = () => {
   const transports = {};
+  const sessionTimestamps = {};
+
+  // Periodic cleanup of stale sessions
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [id, ts] of Object.entries(sessionTimestamps)) {
+      if (now - ts > SESSION_TTL_MS) {
+        logger.info(`Evicting stale MCP session ${id}`);
+        if (transports[id]) {
+          try { transports[id].close(); } catch { /* ignore */ }
+          delete transports[id];
+        }
+        delete sessionTimestamps[id];
+      }
+    }
+  }, 60000); // Check every minute
+  cleanup.unref(); // Don't keep process alive
 
   return async (req, res) => {
     try {
@@ -33,17 +54,27 @@ const createMcpHandler = () => {
         let transport;
         if (sessionId && transports[sessionId]) {
           transport = transports[sessionId];
+          sessionTimestamps[sessionId] = Date.now(); // Refresh TTL
         } else {
+          // Check session limit
+          if (Object.keys(transports).length >= MAX_SESSIONS) {
+            res.status(503).json({error: 'Too many active sessions'});
+            return;
+          }
           transport = new StreamableHTTPServerTransport({sessionIdGenerator: undefined});
           const server = createMcpServer();
           await server.connect(transport);
           transport.onclose = () => {
-            if (transport.sessionId) delete transports[transport.sessionId];
+            if (transport.sessionId) {
+              delete transports[transport.sessionId];
+              delete sessionTimestamps[transport.sessionId];
+            }
           };
         }
         await transport.handleRequest(req, res);
         if (transport.sessionId && !transports[transport.sessionId]) {
           transports[transport.sessionId] = transport;
+          sessionTimestamps[transport.sessionId] = Date.now();
         }
       } else if (req.method === 'GET') {
         const sessionId = req.headers['mcp-session-id'];
@@ -51,12 +82,14 @@ const createMcpHandler = () => {
           res.status(400).json({error: 'Invalid or missing session ID'});
           return;
         }
+        sessionTimestamps[sessionId] = Date.now();
         await transports[sessionId].handleRequest(req, res);
       } else if (req.method === 'DELETE') {
         const sessionId = req.headers['mcp-session-id'];
         if (sessionId && transports[sessionId]) {
           await transports[sessionId].close();
           delete transports[sessionId];
+          delete sessionTimestamps[sessionId];
         }
         res.status(200).end();
       } else {
