@@ -16,8 +16,47 @@ const registerMetaTools = require('./tools/meta');
 const MAX_SESSIONS = 100;
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+// Rate limiting per IP
+const MCP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute window
+const MCP_MAX_REQUESTS_PER_WINDOW = 120; // 2 requests/sec average
+const ipRequestCounts = {};
+
+const checkRateLimit = (ip) => {
+  const now = Date.now();
+  if (!ipRequestCounts[ip] || now - ipRequestCounts[ip].windowStart > MCP_RATE_LIMIT_WINDOW_MS) {
+    ipRequestCounts[ip] = {windowStart: now, count: 0};
+  }
+  ipRequestCounts[ip].count++;
+  return ipRequestCounts[ip].count > MCP_MAX_REQUESTS_PER_WINDOW;
+};
+
+// Clean up stale IP entries periodically
+const ipCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, data] of Object.entries(ipRequestCounts)) {
+    if (now - data.windowStart > MCP_RATE_LIMIT_WINDOW_MS * 2) delete ipRequestCounts[ip];
+  }
+}, 5 * 60 * 1000);
+ipCleanup.unref();
+
+/**
+ * Wrap an MCP server to log all tool calls for audit purposes.
+ */
+const wrapWithAuditLog = (server) => {
+  const origTool = server.tool.bind(server);
+  server.tool = (name, description, schema, handler) => {
+    const wrappedHandler = async (args) => {
+      const padId = args.padId || args.padID || '(none)';
+      logger.info(`MCP tool call: ${name} padId=${padId}`);
+      return handler(args);
+    };
+    return origTool(name, description, schema, wrappedHandler);
+  };
+  return server;
+};
+
 const createMcpServer = () => {
-  const server = new McpServer({name: 'etherpad', version: '0.0.1'});
+  const server = wrapWithAuditLog(new McpServer({name: 'etherpad', version: '0.0.1'}));
   registerAuthorshipTools(server);
   registerContentTools(server);
   registerEditingTools(server);
@@ -49,6 +88,14 @@ const createMcpHandler = () => {
 
   return async (req, res) => {
     try {
+      // Rate limit by IP
+      const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+      if (checkRateLimit(clientIp)) {
+        logger.warn(`MCP rate limit exceeded for ${clientIp}`);
+        res.status(429).json({error: 'Rate limit exceeded'});
+        return;
+      }
+
       if (req.method === 'POST') {
         const sessionId = req.headers['mcp-session-id'];
         let transport;

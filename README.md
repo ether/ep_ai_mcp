@@ -69,6 +69,28 @@ Unauthenticated requests receive a `401` response.
 All tools respect the access control settings configured in `ep_ai_core`. Pads
 with `none` access are hidden; pads with `readOnly` access block editing tools.
 
+## Security
+
+**HTTPS required in production.** The MCP endpoint transmits API keys and
+pad content. Always use a reverse proxy (nginx, Caddy) with TLS in front
+of Etherpad when exposing `/mcp` to the network. The examples below use
+`http://localhost` for local development only.
+
+**API key scope.** The Etherpad API key grants access to all MCP tools and
+the full Etherpad API. Treat it like a database password. Use environment
+variables in config files rather than hardcoding:
+
+```yaml
+# OpenClaw: use env var
+headers:
+  Authorization: "Bearer ${ETHERPAD_API_KEY}"
+```
+
+**Rate limiting.** The MCP endpoint enforces 120 requests per minute per IP
+to prevent abuse.
+
+**Audit logging.** All MCP tool calls are logged with the tool name and pad ID.
+
 ## Connecting from AI Clients
 
 ### Claude Desktop
