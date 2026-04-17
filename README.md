@@ -1,4 +1,4 @@
-# ep_ai_mcp
+# AI MCP Server for Etherpad
 
 MCP (Model Context Protocol) server for Etherpad. Exposes pad content, authorship,
 editing, and chat as MCP tools that AI assistants can call.
