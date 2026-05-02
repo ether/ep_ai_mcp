@@ -24,7 +24,7 @@
     "ep_ai_core": ">=0.0.1"
   },
   "devDependencies": {
-    "eslint": "^8.57.1",
+    "eslint": "^10.3.0",
     "eslint-config-etherpad": "^4.0.4",
     "typescript": "^5.9.3"
   },
