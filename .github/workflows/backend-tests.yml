@@ -58,6 +58,16 @@ jobs:
         name: Install Etherpad core dependencies
         working-directory: ./etherpad-lite
         run: bin/installDeps.sh
+      - name: Install peer plugin (ep_ai_core)
+        # ep_ai_mcp declares ep_ai_core as a peer dependency. `pnpm run
+        # plugins i --path` doesn't pull peers from npm, so without this
+        # the runtime require('ep_ai_core/index') in
+        # exports.expressCreateServer fails with "Cannot find module"
+        # and every backend test that touches an authenticated route
+        # 404s instead of 401-ing.
+        working-directory: ./etherpad-lite
+        run: |
+          pnpm run plugins i ep_ai_core
       - name: Install plugin
         working-directory: ./etherpad-lite
         run: |
