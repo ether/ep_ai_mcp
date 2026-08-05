@@ -4,6 +4,14 @@ const padManager = require('ep_etherpad-lite/node/db/PadManager');
 const authorManager = require('ep_etherpad-lite/node/db/AuthorManager');
 const epAiCore = require('ep_ai_core/index');
 
+// Etherpad attributes inserts to this reserved id when no real author made
+// them: the default pad content written on pad creation, HTTP API
+// setText/appendText/setHTML calls without an authorId, server-side imports.
+// It has no author record and core keeps it out of listAuthorsOfPad, so
+// reporting it here just yielded a phantom author called "Unknown".
+// See ether/etherpad#8044.
+const SYSTEM_AUTHOR_ID = 'a.etherpad-system';
+
 module.exports = (server) => {
   server.tool('list_pads',
       'List all pad IDs the AI has access to',
@@ -26,7 +34,7 @@ module.exports = (server) => {
           return {content: [{type: 'text', text: 'Access denied'}]};
         }
         const pad = await padManager.getPad(padId);
-        const authorIds = pad.getAllAuthors();
+        const authorIds = pad.getAllAuthors().filter((id) => id !== SYSTEM_AUTHOR_ID);
         const authors = await Promise.all(authorIds.map(async (id) => ({
           id,
           name: await authorManager.getAuthorName(id) || 'Unknown',

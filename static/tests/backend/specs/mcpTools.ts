@@ -62,6 +62,37 @@ describe('ep_ai_mcp - MCP endpoint', function () {
     });
   });
 
+  describe('get_pad_info', function () {
+    // The tool handlers are registered on an MCP server object; capture them
+    // with a stub server so they can be exercised without an MCP session.
+    const loadTools = () => {
+      const tools: {[name: string]: (args: any) => Promise<any>} = {};
+      require('../../../../tools/meta')({
+        tool: (name: string, desc: string, schema: any, handler: any) => {
+          tools[name] = handler;
+        },
+      });
+      return tools;
+    };
+
+    it('omits the reserved system author', async function () {
+      // createPad without an authorId attributes the text to
+      // `a.etherpad-system`, which has no author record and is not a real
+      // contributor (ether/etherpad#8044).
+      const padId = `test-mcp-${randomString(10)}`;
+      await agent.get(`/api/${apiVersion}/createPad?padID=${padId}&text=Hello`)
+          .set('Authorization', await generateJWTToken());
+      const pad = await padManager.getPad(padId);
+      assert.ok(pad.getAllAuthors().includes('a.etherpad-system'),
+          'precondition: the pad pool holds the system author');
+
+      const res = await loadTools().get_pad_info({padId});
+      const info = JSON.parse(res.content[0].text);
+      assert.deepEqual(info.authors.map((a: any) => a.id).filter(
+          (id: string) => id === 'a.etherpad-system'), []);
+    });
+  });
+
   describe('rate limiting', function () {
     it('returns 429 after exceeding rate limit', async function () {
       // The rate limit is 120 requests per minute per IP.
