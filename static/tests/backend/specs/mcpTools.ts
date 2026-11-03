@@ -40,6 +40,26 @@ describe('ep_ai_mcp - MCP endpoint', function () {
           }});
       assert.notEqual(res.status, 401);
     });
+
+    it('answers initialize when Etherpad has already parsed the body', async function () {
+      const res = await agent.post('/mcp')
+          .set('Authorization', await generateJWTToken())
+          .set('Content-Type', 'application/json')
+          .set('Accept', 'application/json, text/event-stream')
+          .buffer(true).parse((r: any, cb: any) => {
+            let text = '';
+            r.on('data', (c: Buffer) => { text += c.toString(); });
+            r.on('end', () => cb(null, text));
+          })
+          .send({jsonrpc: '2.0', method: 'initialize', id: 1, params: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            clientInfo: {name: 'test', version: '1.0'},
+          }});
+      assert.equal(res.status, 200, res.body);
+      assert.doesNotMatch(res.body, /-32700/);
+      assert.match(res.body, /serverInfo/);
+    });
   });
 
   describe('pad operations via API', function () {
