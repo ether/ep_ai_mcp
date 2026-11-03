@@ -118,7 +118,9 @@ const createMcpHandler = () => {
             }
           };
         }
-        await transport.handleRequest(req, res);
+        // Etherpad's express.json() has already consumed the request stream,
+        // so hand the transport the parsed body instead of letting it re-read.
+        await transport.handleRequest(req, res, req.body);
         if (transport.sessionId && !transports[transport.sessionId]) {
           transports[transport.sessionId] = transport;
           sessionTimestamps[transport.sessionId] = Date.now();
