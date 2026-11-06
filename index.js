@@ -26,14 +26,28 @@ const getIsApiTokenAuthorized = () => {
   return fallbackIsApiTokenAuthorized;
 };
 
-const getSsoClientIds = () => {
+const getSettings = () => {
   try {
     const mod = require('ep_etherpad-lite/node/utils/Settings');
-    const settings = mod.sso ? mod : (mod.default || mod);
-    const clients = settings.sso && Array.isArray(settings.sso.clients) ? settings.sso.clients : [];
-    return clients.map((c) => c && c.client_id).filter((id) => typeof id === 'string');
+    return mod.sso || mod.authenticationMethod ? mod : (mod.default || mod);
   } catch {
-    return [];
+    return {};
+  }
+};
+
+const getSsoClientIds = () => {
+  const settings = getSettings();
+  const clients = settings.sso && Array.isArray(settings.sso.clients) ? settings.sso.clients : [];
+  return clients.map((c) => c && c.client_id).filter((id) => typeof id === 'string');
+};
+
+// Core's API key (APIKeyHandler.apikey). Looked up through exports so tests
+// can stub it; core only loads a key in apikey mode.
+exports.getApiKey = () => {
+  try {
+    return require('ep_etherpad-lite/node/handler/APIKeyHandler').apikey;
+  } catch {
+    return null;
   }
 };
 
@@ -44,22 +58,23 @@ const safeEqual = (a, b) => {
 };
 
 // /mcp gives full read/write access to every pad, so it applies the same
-// rules as Etherpad's HTTP API (APIHandler.ts): in apikey mode only the API
-// key is accepted; otherwise a JWT must be signed by Etherpad's OAuth2
-// provider AND be an admin or client_credentials token. A signed token for an
-// ordinary user is not enough.
+// rules as Etherpad's HTTP API: the mode comes from core's configured
+// authenticationMethod. In apikey mode only the API key is accepted; in any
+// other mode (sso is the default) the key is ignored and a JWT must be signed
+// by Etherpad's OAuth2 provider AND be an admin or client_credentials token.
+// A signed token for an ordinary user is not enough.
 const authMiddleware = async (req, res, next) => {
   try {
-    let apikey;
-    try {
-      apikey = require('ep_etherpad-lite/node/handler/APIKeyHandler').apikey;
-    } catch { apikey = null; }
-
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace(/^Bearer\s+/i, '');
+    const method = getSettings().authenticationMethod;
 
-    if (apikey && apikey.trim().length > 0) {
-      if (token && safeEqual(token, apikey.trim())) return next();
+    if (method === 'apikey') {
+      const apikey = exports.getApiKey();
+      if (token && typeof apikey === 'string' && apikey.trim().length > 0 &&
+          safeEqual(token, apikey.trim())) {
+        return next();
+      }
     } else if (token) {
       try {
         const jose = require('ep_etherpad-lite/node_modules/jose');

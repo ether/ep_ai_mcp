@@ -148,6 +148,75 @@ describe('ep_ai_mcp - MCP endpoint', function () {
       }
     });
 
+    describe('authentication mode comes from settings.authenticationMethod', function () {
+      const API_KEY = 'mcp-test-api-key-0123456789';
+      const settingsMod = require('ep_etherpad-lite/node/utils/Settings');
+      const settings = settingsMod.sso || settingsMod.authenticationMethod
+        ? settingsMod : (settingsMod.default || settingsMod);
+      const plugin = require('../../../../index');
+      let backupMethod: string;
+      let backupGetApiKey: () => string | null;
+
+      beforeEach(function () {
+        backupMethod = settings.authenticationMethod;
+        backupGetApiKey = plugin.getApiKey;
+        // A non-empty key is present in both modes below.
+        plugin.getApiKey = () => API_KEY;
+      });
+      afterEach(function () {
+        settings.authenticationMethod = backupMethod;
+        plugin.getApiKey = backupGetApiKey;
+      });
+
+      describe('sso mode with a leftover API key', function () {
+        beforeEach(function () { settings.authenticationMethod = 'sso'; });
+
+        it('rejects the API key', async function () {
+          const res = await callTool(`Bearer ${API_KEY}`, 'get_pad_text', {padId});
+          assert.equal(res.status, 401, res.body);
+          assert.doesNotMatch(String(res.body), /SECRET-/);
+        });
+
+        it('accepts an admin JWT', async function () {
+          const res = await callTool(await generateJWTToken(), 'get_pad_text', {padId});
+          assert.equal(res.status, 200, res.body);
+          assert.match(res.body, new RegExp(`SECRET-${padId}`));
+        });
+
+        it('still rejects a non-admin JWT', async function () {
+          const res = await callTool(
+              await signToken({sub: 'user', admin: false}), 'get_pad_text', {padId});
+          assert.equal(res.status, 401, res.body);
+        });
+      });
+
+      describe('apikey mode', function () {
+        beforeEach(function () { settings.authenticationMethod = 'apikey'; });
+
+        it('accepts the API key', async function () {
+          const res = await callTool(`Bearer ${API_KEY}`, 'get_pad_text', {padId});
+          assert.equal(res.status, 200, res.body);
+          assert.match(res.body, new RegExp(`SECRET-${padId}`));
+        });
+
+        it('rejects a wrong API key', async function () {
+          const res = await callTool(`Bearer ${API_KEY}x`, 'get_pad_text', {padId});
+          assert.equal(res.status, 401, res.body);
+        });
+
+        it('rejects an admin JWT, as the HTTP API does', async function () {
+          const res = await callTool(await generateJWTToken(), 'get_pad_text', {padId});
+          assert.equal(res.status, 401, res.body);
+        });
+
+        it('rejects everything when no API key is loaded', async function () {
+          plugin.getApiKey = () => null;
+          const res = await callTool('Bearer null', 'get_pad_text', {padId});
+          assert.equal(res.status, 401, res.body);
+        });
+      });
+    });
+
     it('fallback check (cores without isApiTokenAuthorized) applies the same rules',
         function () {
           const {fallbackIsApiTokenAuthorized: ok} = require('../../../../index');
