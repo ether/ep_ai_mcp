@@ -62,6 +62,107 @@ describe('ep_ai_mcp - MCP endpoint', function () {
     });
   });
 
+  describe('authorization (non-admin tokens)', function () {
+    // Tokens signed by Etherpad's own OAuth2 provider key but without admin
+    // rights must not reach the MCP tools, matching core's HTTP API rules.
+    const {SignJWT} = require('ep_etherpad-lite/node_modules/jose');
+    const signToken = async (claims: any) => {
+      const {privateKeyExported} = require('ep_etherpad-lite/node/security/OAuth2Provider');
+      const jwt = new SignJWT({
+        jti: randomString(8),
+        exp: Math.floor(Date.now() / 1000) + 60 * 60,
+        aud: 'account',
+        iss: 'http://localhost:9001',
+        ...claims,
+      });
+      jwt.setProtectedHeader({alg: 'RS256'});
+      return `Bearer ${await jwt.sign(privateKeyExported)}`;
+    };
+    const parseText = (r: any, cb: any) => {
+      let text = '';
+      r.on('data', (c: Buffer) => { text += c.toString(); });
+      r.on('end', () => cb(null, text));
+    };
+    const callTool = (auth: string, name: string, args: any) => agent.post('/mcp')
+        .set('Authorization', auth)
+        .set('Content-Type', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
+        .buffer(true).parse(parseText)
+        .send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name, arguments: args}});
+
+    let padId: string;
+    beforeEach(async function () {
+      padId = `test-mcp-authz-${randomString(10)}`;
+      await agent.get(`/api/${apiVersion}/createPad?padID=${padId}&text=SECRET-${padId}`)
+          .set('Authorization', await generateJWTToken());
+    });
+
+    for (const [label, claims] of [
+      ['admin: false', {sub: 'user', admin: false}],
+      ['no admin claim', {sub: 'user'}],
+      ['admin: "true" (string)', {sub: 'user', admin: 'true'}],
+      ['sub equal to a client id but no grant marker', {sub: 'admin_client'}],
+      ['client_credentials marker for an unknown client', {
+        sub: 'not-a-client', etherpad_grant: 'client_credentials'}],
+    ] as Array<[string, any]>) {
+      it(`rejects get_pad_text with a signed token with ${label}`, async function () {
+        const res = await callTool(await signToken(claims), 'get_pad_text', {padId});
+        assert.equal(res.status, 401, res.body);
+        assert.doesNotMatch(String(res.body), /SECRET-/);
+      });
+    }
+
+    it('rejects edit_pad with a non-admin token and leaves the pad unchanged', async function () {
+      const res = await callTool(await signToken({sub: 'user', admin: false}), 'edit_pad',
+          {padId, action: 'append', text: '-USER-MCP-EDIT'});
+      assert.equal(res.status, 401, res.body);
+      const pad = await padManager.getPad(padId);
+      assert.doesNotMatch(pad.text(), /USER-MCP-EDIT/);
+    });
+
+    it('rejects list_pads with a non-admin token', async function () {
+      const res = await callTool(await signToken({sub: 'user', admin: false}), 'list_pads', {});
+      assert.equal(res.status, 401, res.body);
+      assert.doesNotMatch(String(res.body), new RegExp(padId));
+    });
+
+    it('still serves get_pad_text to an admin token', async function () {
+      const res = await callTool(await generateJWTToken(), 'get_pad_text', {padId});
+      assert.equal(res.status, 200, res.body);
+      assert.match(res.body, new RegExp(`SECRET-${padId}`));
+    });
+
+    it('accepts a client_credentials token for a configured SSO client', async function () {
+      const mod = require('ep_etherpad-lite/node/utils/Settings');
+      const settings = mod.sso ? mod : (mod.default || mod);
+      const backup = settings.sso.clients;
+      settings.sso.clients = [{client_id: 'mcp_test_client'}];
+      try {
+        const res = await callTool(await signToken(
+            {sub: 'mcp_test_client', etherpad_grant: 'client_credentials'}),
+        'get_pad_text', {padId});
+        assert.equal(res.status, 200, res.body);
+        assert.match(res.body, new RegExp(`SECRET-${padId}`));
+      } finally {
+        settings.sso.clients = backup;
+      }
+    });
+
+    it('fallback check (cores without isApiTokenAuthorized) applies the same rules',
+        function () {
+          const {fallbackIsApiTokenAuthorized: ok} = require('../../../../index');
+          const ids = ['admin_client'];
+          assert.equal(ok({sub: 'admin', admin: true}, ids), true);
+          assert.equal(ok({sub: 'user', admin: false}, ids), false);
+          assert.equal(ok({sub: 'user'}, ids), false);
+          assert.equal(ok({sub: 'user', admin: 'true'}, ids), false);
+          assert.equal(ok({sub: 'admin_client'}, ids), false);
+          assert.equal(ok({sub: 'admin_client', etherpad_grant: 'client_credentials'}, ids), true);
+          assert.equal(ok({sub: 'x', etherpad_grant: 'client_credentials'}, ids), false);
+          assert.equal(ok(null, ids), false);
+        });
+  });
+
   describe('pad operations via API', function () {
     let padId: string;
 
