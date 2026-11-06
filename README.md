@@ -18,12 +18,16 @@ The MCP server is mounted at `/mcp` using the Streamable HTTP transport.
 ## Authentication
 
 Every request to `/mcp` must include a valid `Authorization: Bearer <token>`
-header. The token can be either:
+header. `/mcp` gives read/write access to every pad, so it accepts the same
+credentials as Etherpad's HTTP API:
 
-- The Etherpad API key (from `APIKEY.txt`)
-- A valid JWT signed with the Etherpad OAuth2 provider's RS256 key
+- With `authenticationMethod: "apikey"`: the Etherpad API key (from `APIKEY.txt`).
+- Otherwise (`sso`, the default): a JWT from Etherpad's OAuth2 provider that is
+  either an admin user's access token (`admin: true`) or a `client_credentials`
+  token for a client listed in `sso.clients`. Tokens for ordinary
+  (non-admin) users are rejected.
 
-Unauthenticated requests receive a `401` response.
+Requests without valid credentials receive a `401` response.
 
 ## Tools
 
