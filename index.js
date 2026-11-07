@@ -42,7 +42,8 @@ const getSsoClientIds = () => {
 };
 
 // Core's API key (APIKeyHandler.apikey). Looked up through exports so tests
-// can stub it; core only loads a key in apikey mode.
+// can stub it (on the copy core loaded, see mcpTools.ts); core only loads a
+// key in apikey mode.
 exports.getApiKey = () => {
   try {
     return require('ep_etherpad-lite/node/handler/APIKeyHandler').apikey;
