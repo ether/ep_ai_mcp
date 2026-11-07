@@ -153,11 +153,23 @@ describe('ep_ai_mcp - MCP endpoint', function () {
       const settingsMod = require('ep_etherpad-lite/node/utils/Settings');
       const settings = settingsMod.sso || settingsMod.authenticationMethod
         ? settingsMod : (settingsMod.default || settingsMod);
-      const plugin = require('../../../../index');
+      // Stub the copy Etherpad actually loaded. Core can install its own copy
+      // of the plugin (src/plugin_packages), separate from the one this spec
+      // lives in, and the server only calls that copy's exports.
+      // Resolved in beforeEach: plugins are not loaded yet when this file is.
+      const loadedPlugin = () => {
+        const loaded =
+            require('ep_etherpad-lite/static/js/pluginfw/plugin_defs').plugins.ep_ai_mcp;
+        return loaded && loaded.package && loaded.package.path
+          ? require(require('path').join(loaded.package.path, 'index.js'))
+          : require('../../../../index');
+      };
+      let plugin: any;
       let backupMethod: string;
       let backupGetApiKey: () => string | null;
 
       beforeEach(function () {
+        plugin = loadedPlugin();
         backupMethod = settings.authenticationMethod;
         backupGetApiKey = plugin.getApiKey;
         // A non-empty key is present in both modes below.
